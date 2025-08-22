@@ -4219,3 +4219,18 @@ set_define(
     True,
     when=moz_debug | milestone.is_early_beta_or_earlier,
 )
+
+# Enterprise features
+# ==============================================================
+option("--enable-enterprise", help="Enable enterprise features and telemetry")
+
+
+@depends("--enable-enterprise")
+def enterprise(value):
+    enabled = bool(value)
+    if enabled:
+        return True
+
+
+set_config("MOZ_ENTERPRISE", enterprise)
+set_define("MOZ_ENTERPRISE", enterprise)
