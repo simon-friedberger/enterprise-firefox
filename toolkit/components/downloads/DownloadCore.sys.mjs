@@ -638,6 +638,7 @@ Download.prototype = {
   async _succeed() {
     await lazy.DownloadIntegration.downloadDone(this);
 
+/* eslint-disable */
 #ifdef MOZ_ENTERPRISE
     // Record security telemetry if enabled for enterprise environments
     if (
@@ -649,6 +650,7 @@ Download.prototype = {
       this._recordSecurityTelemetry();
     }
 #endif
+/* eslint-enable */
 
     this._deferSucceeded.resolve();
 
@@ -686,6 +688,7 @@ Download.prototype = {
     }
   },
 
+/* eslint-disable */
 #ifdef MOZ_ENTERPRISE
   /**
    * Records security telemetry for completed downloads when MOZ_ENTERPRISE is enabled.
@@ -724,12 +727,16 @@ Download.prototype = {
         source_url_domain: sourceDomain,
         is_private: this.source.isPrivate || false,
       });
+
+      // Submit the enterprise ping
+      GleanPings.enterprise.submit();
     } catch (ex) {
       // Silently fail if telemetry recording encounters any issues
       console.warn("Failed to record download security telemetry:", ex);
     }
   },
 #endif
+/* eslint-enable */
 
   /**
    * When a request to unblock the download is received, contains a promise
