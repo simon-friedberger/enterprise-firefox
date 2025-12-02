@@ -520,7 +520,13 @@ def target_tasks_enterprise_firefox_with_tests(
 
         return False
 
-    return [l for l in filtered_for_project if filter(full_task_graph[l])]
+    tasks = [l for l in filtered_for_project if filter(full_task_graph[l])]
+    tasks.extend([
+        "toolchain-macosx64-clang-20",
+        "toolchain-macosx64-aarch64-clang-20",
+        "toolchain-win64-cbindgen",
+    ])
+    return tasks
 
 
 @register_target_task("graphics_tasks")
