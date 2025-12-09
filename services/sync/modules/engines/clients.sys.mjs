@@ -66,6 +66,9 @@ const COLLECTION_MODIFIED_REASON_FIRSTSYNC = "firstsync";
 const SUPPORTED_PROTOCOL_VERSIONS = [SYNC_API_VERSION];
 const LAST_MODIFIED_ON_PROCESS_COMMAND_PREF =
   "services.sync.clients.lastModifiedOnProcessCommands";
+const MACHINE_ID_PREF = "services.sync.client.machineId";
+const MACHINE_ID_DETECT_CHANGE_PREF =
+  "services.sync.client.machineId.detectChange";
 
 function hasDupeCommand(commands, action) {
   if (!commands) {
@@ -100,6 +103,7 @@ Utils.deferGetSet(ClientsRec, "cleartext", [
   "application",
   "device",
   "fxaDeviceId",
+  "machineId",
 ]);
 
 export function ClientEngine(service) {
@@ -442,7 +446,56 @@ ClientEngine.prototype = {
     this._knownStaleFxADeviceIds = Utils.arraySub(localClients, fxaClients);
   },
 
+  async _checkMachineIdChanged() {
+    const storedMachineId = Services.prefs.getStringPref(MACHINE_ID_PREF, "");
+
+    let currentMachineId = null;
+    try {
+      const { MachineId } = ChromeUtils.importESModule(
+        "resource://gre/modules/MachineId.sys.mjs"
+      );
+      currentMachineId = await MachineId.getHashedId();
+    } catch (error) {
+      this._log.warn("Could not get machine ID", error);
+      return false;
+    }
+
+    if (!currentMachineId) {
+      return false;
+    }
+
+    if (storedMachineId && storedMachineId !== currentMachineId) {
+      this._log.info(
+        "Machine ID changed - profile may have been copied to a different machine"
+      );
+      // Clear the old local ID to force generation of a new one
+      Services.prefs.clearUserPref("services.sync.client.GUID");
+      // Notify observers (e.g., for FxA re-registration)
+      Services.obs.notifyObservers(null, "sync:machine-id-changed");
+      // Store the new machine ID
+      Services.prefs.setStringPref(MACHINE_ID_PREF, currentMachineId);
+      return true;
+    }
+
+    // Store current machine ID if not already stored
+    if (!storedMachineId) {
+      Services.prefs.setStringPref(MACHINE_ID_PREF, currentMachineId);
+    }
+    return false;
+  },
+
   async _syncStartup() {
+    // Check if machine ID changed (profile copied to different machine)
+    // This is disabled by default - enable via pref for enterprise use
+    if (
+      Services.prefs.getBoolPref(MACHINE_ID_DETECT_CHANGE_PREF, false) &&
+      (await this._checkMachineIdChanged())
+    ) {
+      this._log.info("Machine ID changed, regenerating client ID");
+      // Force upload of new client record with new ID
+      await this._tracker.addChangedID(this.localID);
+    }
+
     // Reupload new client record periodically.
     if (Date.now() / 1000 - this.lastRecordUpload > CLIENTS_TTL_REFRESH) {
       await this._tracker.addChangedID(this.localID);
@@ -1017,6 +1070,16 @@ ClientStore.prototype = {
       record.os = Services.appinfo.OS; // "Darwin"
       record.appPackage = Services.appinfo.ID;
       record.application = this.engine.brandName; // "Nightly"
+
+      // Machine ID for identifying the physical machine (not just the profile)
+      try {
+        const { MachineId } = ChromeUtils.importESModule(
+          "resource://gre/modules/MachineId.sys.mjs"
+        );
+        record.machineId = await MachineId.getHashedId();
+      } catch (error) {
+        this._log.warn("failed to get machine id", error);
+      }
 
       // We can't compute these yet.
       // record.device = "";            // Bug 1100723

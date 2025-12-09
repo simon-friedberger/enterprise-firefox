@@ -90,6 +90,12 @@ var snapshotFormatters = {
     } else {
       $("os-theme-row").hidden = true;
     }
+    if (data.machineIdRaw || data.machineIdHashed) {
+      $("machine-id-box").textContent =
+        `${data.machineIdRaw || "N/A"} (hashed: ${data.machineIdHashed || "N/A"})`;
+    } else {
+      $("machine-id-row").hidden = true;
+    }
     if (AppConstants.platform == "macosx") {
       $("rosetta-box").textContent = data.rosetta;
     }

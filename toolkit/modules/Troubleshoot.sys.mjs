@@ -256,6 +256,14 @@ var dataProviders = {
     data.osTheme = Services.sysinfo.getProperty("osThemeInfo");
 
     try {
+      const { MachineId } = ChromeUtils.importESModule(
+        "resource://gre/modules/MachineId.sys.mjs"
+      );
+      data.machineIdRaw = await MachineId.getRawId();
+      data.machineIdHashed = await MachineId.getHashedId();
+    } catch (e) {}
+
+    try {
       // MacOSX: Check for rosetta status, if it exists
       data.rosetta = Services.sysinfo.getProperty("rosettaStatus");
     } catch (e) {}
