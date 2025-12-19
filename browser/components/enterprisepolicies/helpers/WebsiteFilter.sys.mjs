@@ -125,7 +125,7 @@ export let WebsiteFilter = {
     ) {
       if (!this.isAllowed(url)) {
 #ifdef MOZ_ENTERPRISE
-        this._recordBlocklistDomainBrowsed(url);
+        // this._recordBlocklistDomainBrowsed(url);
 #endif
         return Ci.nsIContentPolicy.REJECT_POLICY;
       }

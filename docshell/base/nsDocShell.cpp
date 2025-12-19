@@ -95,6 +95,8 @@
 #include "mozilla/dom/JSWindowActorChild.h"
 #include "mozilla/dom/DocumentBinding.h"
 #include "mozilla/glean/DocshellMetrics.h"
+#include "mozilla/glean/EnterprisepoliciesMetrics.h"
+#include "mozilla/glean/GleanPings.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/net/DocumentChannel.h"
 #include "mozilla/net/DocumentChannelChild.h"
@@ -3409,6 +3411,44 @@ void nsDocShell::UnblockEmbedderLoadEventForFailure(bool aFireFrameErrorEvent) {
   }
 }
 
+static void GetReferrerSpec(nsIChannel* aChannel, nsACString& aReferrer) {
+  if (!aChannel) {
+    return;
+  }
+  nsCOMPtr<nsIHttpChannel> httpChan = do_QueryInterface(aChannel);
+  if (!httpChan) {
+    return;
+  }
+  nsCOMPtr<nsIReferrerInfo> referrer = httpChan->GetReferrerInfo();
+  if (!referrer) {
+    return;
+  }
+  nsCOMPtr<nsIURI> original = referrer->GetOriginalReferrer();
+  if (!original) {
+    return;
+  }
+  original->GetSpec(aReferrer);
+}
+
+static void ReportUrlBlockedByPolicyEvent(nsIURI* aURI, nsIChannel* aChannel) {
+  nsCString uriSpec;
+  if (aURI) {
+    aURI->GetSpec(uriSpec);
+  }
+  nsCString referrerSpec;
+  GetReferrerSpec(aChannel, referrerSpec);
+  glean::content_policy::BlocklistDomainBrowsedExtra extra = {
+      .url = Some(uriSpec),
+      .referrer = Some(referrerSpec),
+  };
+  glean::content_policy::blocklist_domain_browsed.Record(Some(extra));
+  bool disableEnterprisePingForTesting = Preferences::GetBool(
+      "browser.download.enterprise.telemetry.testing.disableSubmit");
+  if (!disableEnterprisePingForTesting) {
+    glean_pings::Enterprise.Submit();
+  }
+}
+
 NS_IMETHODIMP
 nsDocShell::DisplayLoadError(nsresult aError, nsIURI* aURI,
                              const char16_t* aURL, nsIChannel* aFailedChannel,
@@ -3747,6 +3787,7 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI* aURI,
         // Page blocked by policy
         error = "blockedByPolicy";
         errorDescriptionID = "blockedByPolicy2";
+        ReportUrlBlockedByPolicyEvent(aURI, aFailedChannel);
         break;
       case NS_ERROR_DOM_COOP_FAILED:
         error = "blockedByCOOP";
