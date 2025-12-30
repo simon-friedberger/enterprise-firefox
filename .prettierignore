@@ -1246,6 +1246,10 @@ toolkit/components/downloads/DownloadCore.sys.mjs
 toolkit/components/printing/content/print.js
 toolkit/mozapps/extensions/AddonManager.sys.mjs
 toolkit/mozapps/extensions/internal/XPIDatabase.sys.mjs
+toolkit/components/enterprisepolicies/EnterprisePoliciesParent.sys.mjs
+browser/components/enterprisepolicies/Policies.sys.mjs
+browser/components/enterprisepolicies/schemas/policies-schema.json
+services/sync/modules/service.sys.mjs
 
 # Tests of ESLint command.
 tools/lint/test/files

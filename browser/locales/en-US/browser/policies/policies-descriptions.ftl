@@ -249,6 +249,8 @@ policy-StartDownloadsInTempDirectory = Force downloads to start off in a local, 
 
 policy-SupportMenu = Add a custom support menu item to the help menu.
 
+policy-SyncSettings = Enable or disabled Sync and additionally define which data to sync.
+
 policy-TranslateEnabled = Enable or disable webpage translation.
 
 policy-UserMessaging = Don’t show certain messages to the user.

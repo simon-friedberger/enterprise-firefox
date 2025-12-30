@@ -26,7 +26,6 @@ EXTRA_JS_MODULES["services-sync"] += [
     "modules/policies.sys.mjs",
     "modules/record.sys.mjs",
     "modules/resource.sys.mjs",
-    "modules/service.sys.mjs",
     "modules/status.sys.mjs",
     "modules/sync_auth.sys.mjs",
     "modules/SyncDisconnect.sys.mjs",
@@ -36,6 +35,10 @@ EXTRA_JS_MODULES["services-sync"] += [
     "modules/UIState.sys.mjs",
     "modules/util.sys.mjs",
     "Weave.sys.mjs",
+]
+
+EXTRA_PP_JS_MODULES["services-sync"] += [
+    "modules/service.sys.mjs",
 ]
 
 EXTRA_JS_MODULES["services-sync"].engines += [

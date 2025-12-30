@@ -29,6 +29,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   ProxyPolicies: "resource:///modules/policies/ProxyPolicies.sys.mjs",
   QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
+#ifdef MOZ_ENTERPRISE
+  SyncSettingsPolicy: "resource:///modules/policies/SyncSettingsPolicy.sys.mjs",
+#endif
   WebsiteFilter: "resource:///modules/policies/WebsiteFilter.sys.mjs",
 });
 
@@ -3179,6 +3182,17 @@ export var Policies = {
     },
   },
 
+#ifdef MOZ_ENTERPRISE
+  SyncSettings: {
+    async onBeforeAddons(manager, param) {
+      await lazy.SyncSettingsPolicy.applySettings(manager, param);
+    },
+    async onRemove(manager, _) {
+      await lazy.SyncSettingsPolicy.restoreSettings(manager);
+    }
+  },
+#endif
+
   TranslateEnabled: {
     onBeforeAddons(manager, param) {
       setAndLockPref("browser.translations.enable", param);
@@ -3372,6 +3386,11 @@ export var PoliciesUtils = {
 
   restoreDefaultPref(prefName) {
     const values = this._savedPrefs[prefName];
+
+    if (!values) {
+      // No default values available.
+      return;
+    }
 
     let defaults = Services.prefs.getDefaultBranch("");
     switch (typeof values.defaultValue) {

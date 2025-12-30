@@ -970,6 +970,13 @@ Sync11Service.prototype = {
 
   // configures/enabled/turns-on sync. There must be an FxA user signed in.
   async configure() {
+
+#ifdef MOZ_ENTERPRISE
+    if (!Services.policies.isAllowed("change-sync-state")) {
+      this._log.trace("Sync is force-disabled by the SyncSettings policy and can only be enabled by a policy update.");
+      return;
+    }
+#endif
     // We don't, and must not, throw if sync is already configured, because we
     // might end up being called as part of a "reconnect" flow. We also want to
     // avoid checking the FxA user is the same as the pref because the email
@@ -991,6 +998,12 @@ Sync11Service.prototype = {
 
   // resets/turns-off sync.
   async startOver() {
+#ifdef MOZ_ENTERPRISE
+    if (!Services.policies.isAllowed("change-sync-state")) {
+      this._log.trace("Sync is force-enabled by the SyncSettings policy and can only be disabled by a policy update.");
+      return;
+    }
+#endif
     this._log.trace("Invoking Service.startOver.");
     await this._stopTracking();
     this.status.resetSync();

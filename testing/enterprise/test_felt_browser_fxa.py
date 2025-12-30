@@ -103,6 +103,5 @@ if __name__ == "__main__":
         env_vars={"MOZ_FELT_UI": "1"},
         test_prefs=[
             ["enterprise.loglevel", "Debug"],
-            ["enterprise.sync.enabledByDefault", False],
         ],
     )
