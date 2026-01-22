@@ -206,7 +206,7 @@ EnterprisePoliciesManager.prototype = {
     for (let policyName of policyNames) {
 
 #ifdef MOZ_ENTERPRISE
-      if (policyName in ["DisableAccounts", "DisableFirefoxAccounts"]) {
+      if (["DisableAccounts", "DisableFirefoxAccounts"].includes(policyName)) {
         lazy.log.warn("Disabling accounts is unavailable in Firefox Enterprise.");
         continue;
       }
