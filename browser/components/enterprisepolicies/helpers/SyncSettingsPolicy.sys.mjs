@@ -81,8 +81,7 @@ export const SyncSettingsPolicy = {
     }
 
     lazy.log.debug("Force-enable Sync");
-    await this.connectSync(manager);
-
+    
     for (const [type, pref] of Object.entries(ENGINE_PREFS)) {
       if (param.TypesEnabled.includes(type)) {
         lazy.log.debug(`Enabling type: ${type}`);
@@ -92,6 +91,10 @@ export const SyncSettingsPolicy = {
         lazy.setAndLockPref(pref, false);
       }
     }
+    
+    await this.connectSync(manager);
+    
+    this._currentPolicyState = STATE.SYNC_ENABLED;
   },
 
   /**
