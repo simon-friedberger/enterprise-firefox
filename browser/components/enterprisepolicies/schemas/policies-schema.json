@@ -1693,7 +1693,6 @@
       "required": ["Title", "URL"]
     },
 
-#ifdef MOZ_ENTERPRISE
     "SyncSettings": {
       "type": "object",
       "properties": {
@@ -1710,7 +1709,6 @@
         "required": ["State"]
       }
     },
-#endif
 
     "TranslateEnabled": {
       "type": "boolean"
