@@ -1706,7 +1706,8 @@
             "type": "string",
             "enum": ["addresses", "bookmarks", "history", "openTabs", "passwords", "paymentMethods", "addons", "settings"]
           }
-        }
+        },
+        "required": ["State"]
       }
     },
 #endif
