@@ -30,6 +30,13 @@ const ENGINE_PREFS = {
   settings: "services.sync.engine.prefs",
 };
 
+const STATE = {
+  DEFAULT: "default",
+  SYNC_ENABLED: "enabled",
+  SYNC_DISABLED: "disabled",
+  POLICY_NOT_APPLIED: "policy-not-applied",
+}
+
 /**
  * Policy to control the Sync state (force-enable or force-disable Sync)
  * and to control which data types are synced. The user is not able to
