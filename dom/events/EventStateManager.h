@@ -54,6 +54,7 @@ class Element;
 class Selection;
 class BrowserParent;
 class RemoteDragStartData;
+struct InteractionData;
 
 }  // namespace dom
 
@@ -223,8 +224,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIOBSERVER
 
-  nsresult Init();
-  nsresult Shutdown();
+  void Init();
+  void Shutdown();
 
   static LazyLogModule& MouseCursorUpdateLogRef();
 

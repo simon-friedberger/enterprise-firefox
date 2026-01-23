@@ -7,6 +7,7 @@
 //!
 //! [position]: https://drafts.csswg.org/css-backgrounds-3/#position
 
+use crate::logical_geometry::PhysicalSide;
 use crate::values::computed::{
     Context, Integer, LengthPercentage, NonNegativeNumber, Percentage, ToComputedValue,
 };
@@ -14,7 +15,7 @@ use crate::values::generics;
 use crate::values::generics::position::{
     AnchorSideKeyword, AspectRatio as GenericAspectRatio, GenericAnchorFunction, GenericAnchorSide,
     GenericInset, Position as GenericPosition, PositionComponent as GenericPositionComponent,
-    PositionOrAuto as GenericPositionOrAuto, ZIndex as GenericZIndex,
+    PositionOrAuto as GenericPositionOrAuto, TreeScoped, ZIndex as GenericZIndex,
 };
 pub use crate::values::specified::position::{
     AnchorName, AnchorScope, DashedIdentAndOrTryTactic, GridAutoFlow, GridTemplateAreas,
@@ -63,7 +64,6 @@ pub type AnchorFunction = GenericAnchorFunction<Percentage, Inset>;
 #[cfg(feature = "gecko")]
 use crate::{
     gecko_bindings::structs::AnchorPosOffsetResolutionParams,
-    logical_geometry::PhysicalSide,
     values::{computed::Length, DashedIdent},
 };
 
@@ -71,7 +71,7 @@ impl AnchorFunction {
     /// Resolve the anchor function with the given resolver. Returns `Err()` if no anchor is found.
     #[cfg(feature = "gecko")]
     pub fn resolve(
-        anchor_name: &DashedIdent,
+        anchor_name: &TreeScoped<DashedIdent>,
         anchor_side: &AnchorSide,
         prop_side: PhysicalSide,
         params: &AnchorPosOffsetResolutionParams,
@@ -83,7 +83,8 @@ impl AnchorFunction {
         let valid = unsafe {
             Gecko_GetAnchorPosOffset(
                 params,
-                anchor_name.0.as_ptr(),
+                anchor_name.value.0.as_ptr(),
+                &anchor_name.scope,
                 prop_side as u8,
                 keyword as u8,
                 percentage.0,

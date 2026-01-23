@@ -91,9 +91,6 @@ urlbar-result-menu-tip-get-help =
 urlbar-result-menu-dismiss-suggestion =
     .label = Dismiss this suggestion
     .accesskey = D
-urlbar-result-menu-learn-more-about-firefox-suggest =
-    .label = Learn more about { -firefox-suggest-brand-name }
-    .accesskey = L
 urlbar-result-menu-manage-firefox-suggest =
     .label = Manage { -firefox-suggest-brand-name }
     .accesskey = M
@@ -795,6 +792,9 @@ urlbar-searchmode-default =
 # Label shown on the top of Searchmode Switcher popup. After this label, the
 # available search engines will be listed.
 urlbar-searchmode-popup-description = This time search with:
+# Label shown on the top of Searchmode Switcher popup when the search engine won't automatically
+# reset after submitting.
+urlbar-searchmode-popup-sticky-description = Search with:
 urlbar-searchmode-popup-search-settings-menuitem =
     .label = Search Settings
 
@@ -862,17 +862,10 @@ urlbar-group-recent-searches =
 urlbar-group-trending =
   .label = Trending on { $engine }
 
-# Label shown above sponsored suggestions in the urlbar results.
-urlbar-group-sponsored =
-  .label = Sponsored
-
 # The result menu labels shown next to trending results.
 urlbar-result-menu-trending-dont-show =
     .label = Don’t show trending searches
     .accesskey = D
-urlbar-result-menu-trending-why =
-    .label = Why am I seeing this?
-    .accesskey = W
 
 # A message that replaces a result when the user dismisses all suggestions of a
 # particular type.

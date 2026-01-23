@@ -129,7 +129,10 @@ export class SettingPane extends MozLitElement {
 
   /** @param {string} groupId */
   groupTemplate(groupId) {
-    return html`<setting-group groupid=${groupId}></setting-group>`;
+    return html`<setting-group
+      groupid=${groupId}
+      .inSubPane=${this.isSubPane}
+    ></setting-group>`;
   }
 
   render() {
@@ -137,6 +140,7 @@ export class SettingPane extends MozLitElement {
       <moz-page-header
         data-l10n-id=${this.config.l10nId}
         .iconSrc=${this.config.iconSrc}
+        .supportPage=${this.config.supportPage}
         .backButton=${this.isSubPane}
         @navigate-back=${this.goBack}
       ></moz-page-header>

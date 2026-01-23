@@ -1,9 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-:root {
-  --background-color-canvas: transparent;
-}
+
 @keyframes springUp {
   from {
     opacity: 0;
@@ -18,11 +16,7 @@
 #multi-stage-message-root {
   --bg-white: light-dark(#fff, #fff);
   --bg-transparent: transparent;
-  --tile-border-color: #f1e7f8;
   --shadow-color: rgb(59 34 121);
-
-  --gradient-button: linear-gradient(97deg, #8341ca -31.39%, #656fff 90.52%);
-  --gradient-selected-border: linear-gradient(117deg, #321bfd -17.87%, #cf30e2 52.93%, #f90 89.02%, #f5c451 109.44%);
 
   .main-content,
   .section-main,
@@ -74,7 +68,8 @@
       margin: 0 auto;
       border: var(--border-width) solid var(--border-color-transparent);
       border-radius: var(--border-radius-medium);
-      background: var(--gradient-button);
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens -- gradient defined in ai-window-content.css */
+      background: var(--aiwindow-gradient-button);
       color: var(--button-text-color-primary);
       text-align: center;
       font-size: var(--button-font-size);
@@ -100,7 +95,7 @@
       height: calc(var(--size-item-medium) * 11);
       padding-block: calc(var(--space-xsmall) * 9) 0;
       /* stylelint-disable-next-line -- custom border color per Figma design */
-      border: var(--border-width) solid var(--tile-border-color);
+      border: var(--border-width) solid var(--aiwindow-brand-soft-purple);
       display: flex;
       flex-direction: column;
       justify-content: start;
@@ -142,9 +137,10 @@
 
       &:has(.selected) {
         border: calc(var(--border-width) * 2) solid var(--border-color-transparent);
+        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens -- gradient defined in ai-window-content.css */
         background:
           linear-gradient(#fff, #fff) padding-box,
-          var(--gradient-selected-border) border-box;
+          var(--aiwindow-input-gradient) border-box;
         /* stylelint-disable-next-line -- custom shadow color per Figma design */
         box-shadow:
           0 3px 16px 0 color-mix(in srgb, var(--shadow-color) 12%, var(--bg-transparent)),

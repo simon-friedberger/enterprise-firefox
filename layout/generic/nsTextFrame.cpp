@@ -776,6 +776,8 @@ static void InvalidateFrameDueToGlyphsChanged(nsIFrame* aFrame) {
       // we should probably do lazily here since there could be a lot
       // of text frames affected and we'd like to coalesce the work. So that's
       // not easy to do well.
+      // TODO(emilio): If we allow text to store changes or so, this could use
+      // PostRestyleEvent(..., UpdateOverflow);
       presShell->FrameNeedsReflow(f, IntrinsicDirty::None, NS_FRAME_IS_DIRTY);
     }
   }
@@ -1993,6 +1995,22 @@ gfx::ShapedTextFlags nsTextFrame::GetSpacingFlags() const {
                             : gfx::ShapedTextFlags();
 }
 
+// Returns true if the frame has alignment-baseline and baseline-shift
+// set to their initial values.
+static bool HasDefaultVerticalAlignment(const nsIFrame* aFrame) {
+  if (aFrame->AlignmentBaseline() != StyleAlignmentBaseline::Baseline) {
+    return false;
+  }
+
+  const auto& baselineShift = aFrame->BaselineShift();
+  if (baselineShift.IsKeyword() ||
+      !baselineShift.AsLength().IsDefinitelyZero()) {
+    return false;
+  }
+
+  return true;
+}
+
 bool BuildTextRunsScanner::ContinueTextRunAcrossFrames(nsTextFrame* aFrame1,
                                                        nsTextFrame* aFrame2) {
   // We don't need to check font size inflation, since
@@ -2036,55 +2054,50 @@ bool BuildTextRunsScanner::ContinueTextRunAcrossFrames(nsTextFrame* aFrame1,
       aFrame2->GetParent()->GetContent()) {
     // Does aFrame, or any ancestor between it and aAncestor, have a property
     // that should inhibit cross-element-boundary shaping on aSide?
-    auto PreventCrossBoundaryShaping = [](const nsIFrame* aFrame,
-                                          const nsIFrame* aAncestor,
-                                          Side aSide) {
-      while (aFrame != aAncestor) {
-        ComputedStyle* ctx = aFrame->Style();
-        const auto anchorResolutionParams =
-            AnchorPosResolutionParams::From(aFrame);
-        // According to https://drafts.csswg.org/css-text/#boundary-shaping:
-        //
-        // Text shaping must be broken at inline box boundaries when any of
-        // the following are true for any box whose boundary separates the
-        // two typographic character units:
-        //
-        // 1. Any of margin/border/padding separating the two typographic
-        //    character units in the inline axis is non-zero.
-        const auto margin =
-            ctx->StyleMargin()->GetMargin(aSide, anchorResolutionParams);
-        if (!margin->ConvertsToLength() ||
-            margin->AsLengthPercentage().ToLength() != 0) {
-          return true;
-        }
-        const auto& padding = ctx->StylePadding()->mPadding.Get(aSide);
-        if (!padding.ConvertsToLength() || padding.ToLength() != 0) {
-          return true;
-        }
-        if (ctx->StyleBorder()->GetComputedBorderWidth(aSide) != 0) {
-          return true;
-        }
+    auto PreventCrossBoundaryShaping =
+        [](const nsIFrame* aFrame, const nsIFrame* aAncestor, Side aSide) {
+          while (aFrame != aAncestor) {
+            ComputedStyle* ctx = aFrame->Style();
+            const auto anchorResolutionParams =
+                AnchorPosResolutionParams::From(aFrame);
+            // According to https://drafts.csswg.org/css-text/#boundary-shaping:
+            //
+            // Text shaping must be broken at inline box boundaries when any of
+            // the following are true for any box whose boundary separates the
+            // two typographic character units:
+            //
+            // 1. Any of margin/border/padding separating the two typographic
+            //    character units in the inline axis is non-zero.
+            const auto margin =
+                ctx->StyleMargin()->GetMargin(aSide, anchorResolutionParams);
+            if (!margin->ConvertsToLength() ||
+                margin->AsLengthPercentage().ToLength() != 0) {
+              return true;
+            }
+            const auto& padding = ctx->StylePadding()->mPadding.Get(aSide);
+            if (!padding.ConvertsToLength() || padding.ToLength() != 0) {
+              return true;
+            }
+            if (ctx->StyleBorder()->GetComputedBorderWidth(aSide) != 0) {
+              return true;
+            }
 
-        // 2. vertical-align is not baseline.
-        //
-        // FIXME: Should this use VerticalAlignEnum()?
-        const auto& verticalAlign = ctx->StyleDisplay()->mVerticalAlign;
-        if (!verticalAlign.IsKeyword() ||
-            verticalAlign.AsKeyword() != StyleVerticalAlignKeyword::Baseline) {
-          return true;
-        }
+            // 2. vertical-align is not baseline.
+            if (!HasDefaultVerticalAlignment(aFrame)) {
+              return true;
+            }
 
-        // 3. The boundary is a bidi isolation boundary.
-        const auto unicodeBidi = ctx->StyleTextReset()->mUnicodeBidi;
-        if (unicodeBidi == StyleUnicodeBidi::Isolate ||
-            unicodeBidi == StyleUnicodeBidi::IsolateOverride) {
-          return true;
-        }
+            // 3. The boundary is a bidi isolation boundary.
+            const auto unicodeBidi = ctx->StyleTextReset()->mUnicodeBidi;
+            if (unicodeBidi == StyleUnicodeBidi::Isolate ||
+                unicodeBidi == StyleUnicodeBidi::IsolateOverride) {
+              return true;
+            }
 
-        aFrame = aFrame->GetParent();
-      }
-      return false;
-    };
+            aFrame = aFrame->GetParent();
+          }
+          return false;
+        };
 
     const nsIFrame* ancestor =
         nsLayoutUtils::FindNearestCommonAncestorFrameWithinBlock(aFrame1,
@@ -2441,7 +2454,7 @@ already_AddRefed<gfxTextRun> BuildTextRunsScanner::BuildTextRunForFrames(
       if (mathFrame) {
         nsPresentationData presData;
         mathFrame->GetPresentationData(presData);
-        if (NS_MATHML_IS_DTLS_SET(presData.flags)) {
+        if (presData.flags.contains(MathMLPresentationFlag::Dtls)) {
           mathFlags |= MathMLTextRunFactory::MATH_FONT_FEATURE_DTLS;
           anyMathMLStyling = true;
         }
@@ -4169,16 +4182,28 @@ bool nsTextFrame::PropertyProvider::GetSpacingInternal(Range aRange,
       uint32_t runOffsetInSubstring = run.GetSkippedOffset() - aRange.start;
       gfxSkipCharsIterator iter = run.GetPos();
       for (int32_t i = 0; i < run.GetRunLength(); ++i) {
+        auto currScalar = [&]() -> char32_t {
+          iter.SetSkippedOffset(run.GetSkippedOffset() + i);
+          return mCharacterDataBuffer.ScalarValueAt(iter.GetOriginalOffset());
+        };
         if (!atStart && before != 0 &&
             CanAddSpacingBefore(mTextRun, run.GetSkippedOffset() + i,
-                                newlineIsSignificant)) {
+                                newlineIsSignificant) &&
+            !intl::UnicodeProperties::IsCursiveScript(currScalar())) {
           aSpacing[runOffsetInSubstring + i].mBefore += before;
         }
         if (after != 0 &&
             CanAddSpacingAfter(mTextRun, run.GetSkippedOffset() + i,
                                newlineIsSignificant)) {
-          // End of a cluster, not in a ligature: put letter-spacing after it
-          aSpacing[runOffsetInSubstring + i].mAfter += after;
+          // End of a cluster, not in a ligature: put letter-spacing after it,
+          // unless the base char of the cluster belonged to a cursive script.
+          iter.SetSkippedOffset(run.GetSkippedOffset() + i);
+          FindClusterStart(mTextRun, run.GetOriginalOffset(), &iter);
+          char32_t baseChar =
+              mCharacterDataBuffer.ScalarValueAt(iter.GetOriginalOffset());
+          if (!intl::UnicodeProperties::IsCursiveScript(baseChar)) {
+            aSpacing[runOffsetInSubstring + i].mAfter += after;
+          }
         }
         if (mWordSpacing && IsCSSWordSpacingSpace(mCharacterDataBuffer,
                                                   i + run.GetOriginalOffset(),
@@ -4200,9 +4225,7 @@ bool nsTextFrame::PropertyProvider::GetSpacingInternal(Range aRange,
             (textIncludesCJK ||
              run.GetOriginalOffset() + i == mFrame->GetContentOffset()) &&
             mTextRun->IsClusterStart(run.GetSkippedOffset() + i)) {
-          const char32_t currScalar =
-              mCharacterDataBuffer.ScalarValueAt(run.GetOriginalOffset() + i);
-          const auto currClass = TextAutospace::GetCharClass(currScalar);
+          const auto currClass = TextAutospace::GetCharClass(currScalar());
 
           // It is rare for the current class to be a combining mark, as
           // combining marks are not cluster starts. We still check in case a
@@ -5128,8 +5151,7 @@ nsresult nsTextFrame::CharacterDataChanged(
       if (!areAncestorsAwareOfReflowRequest) {
         // Ask the parent frame to reflow me.
         presShell->FrameNeedsReflow(
-            textFrame, IntrinsicDirty::FrameAncestorsAndDescendants,
-            NS_FRAME_IS_DIRTY);
+            textFrame, IntrinsicDirty::FrameAndAncestors, NS_FRAME_IS_DIRTY);
       } else {
         // We already called FrameNeedsReflow on behalf of an earlier sibling,
         // so we can just mark this frame as dirty and don't need to bother
@@ -5433,9 +5455,7 @@ void nsTextFrame::GetTextDecorations(
     // that should be set (see nsLineLayout::VerticalAlignLine).
     if (firstBlock) {
       // At this point, fChild can't be null since TextFrames can't be blocks
-      Maybe<StyleVerticalAlignKeyword> verticalAlign =
-          fChild->VerticalAlignEnum();
-      if (verticalAlign != Some(StyleVerticalAlignKeyword::Baseline)) {
+      if (!HasDefaultVerticalAlignment(fChild)) {
         // Since offset is the offset in the child's coordinate space, we have
         // to undo the accumulation to bring the transform out of the block's
         // coordinate space
@@ -5799,9 +5819,6 @@ static bool ComputeDecorationInset(
     nsTextFrame* aFrame, const nsPresContext* aPresCtx,
     const nsIFrame* aDecFrame, const gfxFont::Metrics& aMetrics,
     nsCSSRendering::DecorationRectParams& aParams, bool aOnlyExtend = false) {
-  const WritingMode wm = aDecFrame->GetWritingMode();
-  bool verticalDec = wm.IsVertical();
-
   aParams.insetLeft = 0.0;
   aParams.insetRight = 0.0;
 
@@ -5839,10 +5856,6 @@ static bool ComputeDecorationInset(
     return true;
   }
 
-  if (wm.IsInlineReversed()) {
-    std::swap(insetLeft, insetRight);
-  }
-
   // The rect of the decorating box (if an inline) or of the current line (if
   // the decoration is propagated from a block ancestor). We will need to
   // compare this with the rect of the current frame, which may be only a
@@ -5856,15 +5869,14 @@ static bool ComputeDecorationInset(
   // reference frame for measurements.
   // If the decorating frame is not inline, then we will need to consider
   // text indentation and calculate geometry using line boxes.
+  WritingMode wm;
   if (aDecFrame->IsInlineFrame()) {
     decRect = aDecFrame->GetContentRectRelativeToSelf();
     decContainer = aDecFrame;
+    wm = aDecFrame->GetWritingMode();
   } else {
     nsIFrame* const lineContainer = FindLineContainer(aFrame);
-    MOZ_ASSERT(
-        lineContainer->GetWritingMode().IsVertical() == wm.IsVertical(),
-        "Decorating frame and line container must have writing modes in the "
-        "same axis");
+    wm = lineContainer->GetWritingMode();
     if (nsILineIterator* const iter = lineContainer->GetLineIterator()) {
       const int32_t lineNum = GetFrameLineNum(aFrame, iter);
       const nsILineIterator::LineInfo lineInfo =
@@ -5930,7 +5942,7 @@ static bool ComputeDecorationInset(
   // Find the margin of the of this frame inside its container.
   nscoord marginLeft, marginRight, frameSize;
   const nsMargin difference = decRect - frameRect;
-  if (verticalDec) {
+  if (wm.IsVertical()) {
     marginLeft = difference.top;
     marginRight = difference.bottom;
     frameSize = frameRect.height;
@@ -5949,6 +5961,7 @@ static bool ComputeDecorationInset(
   bool applyRight = cloneDecBreak || (!aFrame->GetNextContinuation() &&
                                       !aDecFrame->GetNextContinuation());
   if (wm.IsInlineReversed()) {
+    std::swap(insetLeft, insetRight);
     std::swap(applyLeft, applyRight);
   }
   if (applyLeft) {
@@ -6280,7 +6293,9 @@ void nsTextFrame::PaintDecorationLine(
   params.color = aParams.overrideColor ? *aParams.overrideColor : aParams.color;
   params.icoordInFrame = Float(aParams.icoordInFrame);
   params.baselineOffset = Float(aParams.baselineOffset);
-  params.allowInkSkipping = aParams.allowInkSkipping;
+  // Disable ink-skipping for frames with text-combine-upright.
+  params.allowInkSkipping =
+      aParams.allowInkSkipping && !Style()->IsTextCombined();
   params.skipInk = aParams.skipInk;
   if (aParams.callbacks) {
     Rect path = nsCSSRendering::DecorationLineToPath(params);
@@ -8410,17 +8425,21 @@ void nsTextFrame::SelectionStateChanged(uint32_t aStart, uint32_t aEnd,
 
   nsPresContext* presContext = PresContext();
   while (f && f->GetContentOffset() < int32_t(aEnd)) {
-    // We may need to reflow to recompute the overflow area for
-    // spellchecking or IME underline if their underline is thicker than
-    // the normal decoration line.
-    if (ToSelectionTypeMask(aSelectionType) & kSelectionTypesWithDecorations) {
-      bool didHaveOverflowingSelection =
+    // We may need to reflow to recompute the overflow area for spellchecking or
+    // IME underline if their underline is thicker than the normal decoration
+    // line.
+    // FIXME(emilio): Text shadows would need similar treatment, wouldn't they?
+    if (ToSelectionTypeMask(aSelectionType) & kSelectionTypesWithDecorations &&
+        !f->HasAnyStateBits(NS_FRAME_IS_DIRTY)) {
+      const bool didHaveOverflowingSelection =
           f->HasAnyStateBits(TEXT_SELECTION_UNDERLINE_OVERFLOWED);
-      nsRect r(nsPoint(0, 0), GetSize());
+      nsRect r(nsPoint(), GetSize());
       if (didHaveOverflowingSelection ||
           (aSelected && f->CombineSelectionUnderlineRect(presContext, r))) {
-        presContext->PresShell()->FrameNeedsReflow(
-            f, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
+        // TODO(emilio): If we allow text to store changes or so, this could use
+        // PostRestyleEvent(..., UpdateOverflow);
+        presContext->PresShell()->FrameNeedsReflow(f, IntrinsicDirty::None,
+                                                   NS_FRAME_IS_DIRTY);
       }
     }
     // Selection might change anything. Invalidate the overflow area.

@@ -54,6 +54,28 @@ export class FeltProcessParent extends JSProcessActorParent {
     this.firefoxReady = false;
     // Track extension ready state (extension must register its observer)
     this.extensionReady = false;
+    // Current loggedInUserInfo
+    this.loggedInUserInfo = null;
+
+    this.abnormalExitCounter = 0;
+
+    // Amount of abnormal exit to allow over abnormal_exit_period
+    this.abnormalExitLimit = Services.prefs.getIntPref(
+      "enterprise.browser.abnormal_exit_limit",
+      3
+    );
+
+    /* Time period (in seconds) considered for checking the amount of abnormal
+     * exits. Hitting the limit defined above within this period will stop
+     * automatic restart and show user an error.
+     *
+     * confere shouldAbortRestarting()
+     */
+    this.abnormalExitPeriod = Services.prefs.getIntPref(
+      "enterprise.browser.abnormal_exit_period",
+      120
+    );
+    this.abnormalExitFirstTime = 0;
 
     this.restartObserver = {
       observe(aSubject, aTopic) {
@@ -253,19 +275,63 @@ export class FeltProcessParent extends JSProcessActorParent {
           );
           if (!this.restartReported && !this.logoutReported) {
             if (this.proc.exitCode === 0) {
+              this.abnormalExitCounter = 0;
+              this.abnormalExitFirstTime = 0;
               Services.cpmm.sendAsyncMessage(
                 "FeltParent:FirefoxNormalExit",
                 {}
               );
             } else {
-              Services.cpmm.sendAsyncMessage(
-                "FeltParent:FirefoxAbnormalExit",
-                {}
-              );
+              this.handleRestartAfterAbnormalExit();
             }
           }
         });
       });
+  }
+
+  /**
+   * Handles the abnormal exit and decides whether to restart the Firefox
+   * again or to inform the user of the set of crashes.
+   */
+  handleRestartAfterAbnormalExit() {
+    if (this.abnormalExitCounter === 0) {
+      this.abnormalExitFirstTime =
+        Services.telemetry.msSinceProcessStart() / 1000;
+    }
+    this.abnormalExitCounter += 1;
+    if (this.shouldAbortRestarting()) {
+      console.debug(
+        "Abort restarting Firefox and inform the user of the crashes."
+      );
+      Services.cpmm.sendAsyncMessage("FeltParent:FirefoxAbnormalExit", {});
+    } else {
+      console.debug("Trying to restart Firefox again.");
+      this.startFirefox([]);
+    }
+  }
+  /**
+   * Checks the state of the recent abnormal exits, meaning whether the crashes
+   * counter exceeds a pre-set counter limit within a pre-set time period.
+   *
+   * @returns {boolean} Whether these "abnormal" thresholds are exceeded.
+   */
+  shouldAbortRestarting() {
+    console.debug(
+      `Firefox AbnormalExit abnormalExitLimit=${this.abnormalExitLimit} abnormalExitCounter=${this.abnormalExitCounter} ; firstTime=${this.abnormalExitFirstTime} abnormalExitPeriod=${this.abnormalExitPeriod}`
+    );
+    // Have we reached the limit of allowed crashes ?
+    const isExceedingCrashCounterLimit =
+      this.abnormalExitCounter >= this.abnormalExitLimit;
+    // How much time since the first crash we recorded in this session ?
+    const timeSinceFirstCrash =
+      Services.telemetry.msSinceProcessStart() / 1000 -
+      this.abnormalExitFirstTime;
+    // Is the time since first crash too recent ?
+    const isWithinCrashPeriod = timeSinceFirstCrash <= this.abnormalExitPeriod;
+    console.debug(
+      `Firefox AbnormalExit crashLimitHit=${isExceedingCrashCounterLimit} timeSinceFirstCrash=${timeSinceFirstCrash} crashedNotLongAgoEnough=${isWithinCrashPeriod}`
+    );
+    return isExceedingCrashCounterLimit && isWithinCrashPeriod;
   }
 
   async startFirefoxProcess() {
@@ -283,22 +349,31 @@ export class FeltProcessParent extends JSProcessActorParent {
         "@mozilla.org/toolkit/profile-service;1"
       ].getService(Ci.nsIToolkitProfileService);
 
+      let profileName = await this.profileName();
       let foundProfile = null;
+
       for (let profile of profileService.profiles) {
-        if (profile.name === lazy.FeltCommon.ENTERPRISE_PROFILE) {
+        if (profile.name === profileName) {
           foundProfile = profile;
           break;
         }
       }
 
+      /* Remove once we finished foxfooding */
       if (!foundProfile) {
-        console.debug(
-          `FeltExtension: creating new ${lazy.FeltCommon.ENTERPRISE_PROFILE} profile`
-        );
-        foundProfile = profileService.createProfile(
-          null,
-          lazy.FeltCommon.ENTERPRISE_PROFILE
-        );
+        let legacyProfileName = lazy.FeltCommon.ENTERPRISE_PROFILE;
+        for (let profile of profileService.profiles) {
+          if (profile.name === legacyProfileName) {
+            foundProfile = profile;
+            console.warn("using legacy profile");
+            break;
+          }
+        }
+      }
+
+      if (!foundProfile) {
+        console.debug(`FeltExtension: creating new ${profileName} profile`);
+        foundProfile = profileService.createProfile(null, profileName);
 
         await profileService.asyncFlush();
       }
@@ -468,8 +543,11 @@ export class FeltProcessParent extends JSProcessActorParent {
           Services.felt.setTokens(access_token, refresh_token, expires_in);
 
           // TODO: Bug 2003001 - Pass user info from Felt to Firefox to avoid network request on startup
-          const { email } = await lazy.ConsoleClient.getLoggedInUserInfo();
-          lazy.FeltStorage.updateLastSignedInUserEmail(email);
+          this.loggedInUserInfo =
+            await lazy.ConsoleClient.getLoggedInUserInfo();
+          lazy.FeltStorage.updateLastSignedInUserEmail(
+            this.loggedInUserInfo?.email
+          );
 
           const ssoCollectedCookies = this.getAllCookies();
           console.debug(`Collected cookies: ${ssoCollectedCookies.length}`);
@@ -498,4 +576,22 @@ export class FeltProcessParent extends JSProcessActorParent {
       })
     );
   }
+
+  async profileName() {
+    if (this.loggedInUserInfo !== null) {
+      return `${lazy.FeltCommon.ENTERPRISE_PROFILE}-${await hashTo40bits(this.loggedInUserInfo.id)}`;
+    }
+    console.error(`FeltExtension: loggedInUserInfo not set`);
+    return lazy.FeltCommon.ENTERPRISE_PROFILE;
+  }
+}
+
+async function hashTo40bits(s) {
+  const msgUint8 = new TextEncoder().encode(s);
+  const hashBuffer = await globalThis.crypto.subtle.digest("SHA-256", msgUint8);
+  const base64 = new Uint8Array(hashBuffer).slice(0, 5).toBase64({
+    omitPadding: true,
+    alphabet: "base64url",
+  });
+  return base64;
 }

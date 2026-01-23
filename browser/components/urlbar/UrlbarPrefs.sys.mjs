@@ -201,6 +201,20 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   // Feature gate pref for mdn suggestions in the urlbar.
   ["mdn.featureGate", true],
 
+  // The minimum prefix length of a mdn keyword the user must type to trigger
+  // the suggestion.
+  ["mdn.minKeywordLength", 0],
+
+  // If defined and non-zero, this is the maximum number of times the user
+  // will be able to click the "Show less frequently" command for mdn
+  // suggestions. If undefined or zero, the user will be able to click the
+  // command without any limit.
+  ["mdn.showLessFrequentlyCap", 0],
+
+  // The number of times the user has clicked the "Show less frequently" command
+  // for mdn suggestions.
+  ["mdn.showLessFrequentlyCount", 0],
+
   // Comma-separated list of client variants to send to Merino
   ["merino.clientVariants", ""],
 
@@ -563,10 +577,6 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   // When using switch to tabs, if set to true this will move the tab into the
   // active window.
   ["switchTabs.adoptIntoActiveWindow", false],
-
-  // Controls whether searching for open tabs returns tabs from any container
-  // or only from the current container.
-  ["switchTabs.searchAllContainers", true],
 
   // The minimum number of characters needed to match a tab group name.
   ["tabGroups.minSearchLength", 1],

@@ -13,9 +13,12 @@ import { PageExtractorParent } from "resource://gre/actors/PageExtractorParent.s
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
-  PageDataService:
-    "moz-src:///browser/components/pagedata/PageDataService.sys.mjs",
+  // @todo Bug 2009194
+  // PageDataService:
+  //   "moz-src:///browser/components/pagedata/PageDataService.sys.mjs",
 });
 
 const GET_OPEN_TABS = "get_open_tabs";
@@ -76,18 +79,23 @@ export const toolsConfig = [
     function: {
       name: GET_PAGE_CONTENT,
       description:
-        "Retrieve cleaned text content of the provided browser page URL.",
+        "Retrieve cleaned text content of all the provided browser page URLs in the list.",
       parameters: {
         properties: {
-          url: {
-            type: "string",
-            description:
-              "The complete URL of the page to fetch content from. This must exactly match " +
-              "a URL from the current conversation context. Use the full URL including " +
-              "protocol (http/https). Example: 'https://www.example.com/article'.",
+          url_list: {
+            type: "array",
+            items: {
+              type: "string",
+              description:
+                "The complete URL of the page to fetch content from. This must exactly match " +
+                "a URL from the current conversation context. Use the full URL including " +
+                "protocol (http/https). Example: 'https://www.example.com/article'.",
+            },
+            minItems: 1,
+            description: "List of URLs to fetch content from.",
           },
         },
-        required: ["url"],
+        required: ["url_list"],
       },
     },
   },
@@ -111,22 +119,25 @@ export const toolsConfig = [
 export async function getOpenTabs(n = 15) {
   const tabs = [];
 
-  const win = lazy.BrowserWindowTracker.getTopWindow();
-  if (!win || win.closed || !win.gBrowser) {
-    return [];
-  }
+  for (const win of lazy.BrowserWindowTracker.orderedWindows) {
+    if (!lazy.AIWindow.isAIWindowActive(win)) {
+      continue;
+    }
 
-  for (const tab of win.gBrowser.tabs) {
-    const browser = tab.linkedBrowser;
-    const url = browser?.currentURI?.spec;
-    const title = tab.label;
+    if (!win.closed && win.gBrowser) {
+      for (const tab of win.gBrowser.tabs) {
+        const browser = tab.linkedBrowser;
+        const url = browser?.currentURI?.spec;
+        const title = tab.label;
 
-    if (url && !url.startsWith("about:")) {
-      tabs.push({
-        url,
-        title,
-        lastAccessed: tab.lastAccessed,
-      });
+        if (url && !url.startsWith("about:")) {
+          tabs.push({
+            url,
+            title,
+            lastAccessed: tab.lastAccessed,
+          });
+        }
+      }
     }
   }
 
@@ -138,10 +149,18 @@ export async function getOpenTabs(n = 15) {
     topTabs.map(async ({ url, title, lastAccessed }) => {
       let description = "";
       if (url) {
-        description =
-          lazy.PageDataService.getCached(url)?.description ||
-          (await lazy.PageDataService.fetchPageData(url))?.description ||
-          "";
+        // @todo Bug 2009194
+        // PageDataService halts code execution even in try/catch
+        //
+        // try {
+        //   description =
+        //     lazy.PageDataService.getCached(url)?.description ||
+        //     (await lazy.PageDataService.fetchPageData(url))?.description ||
+        //     "";
+        // } catch (e) {
+        //   console.log(e);
+        //   description = "";
+        // }
       }
       return { url, title, description, lastAccessed };
     })
@@ -251,13 +270,28 @@ export class GetPageContent {
    * Tool entrypoint for get_page_content.
    *
    * @param {object} toolParams
-   * @param {string} toolParams.url
+   * @param {string[]} toolParams.url_list
    * @param {Set<string>} allowedUrls
-   * @returns {Promise<string>}
+   * @returns {Promise<Array<string>>}
    *  A promise resolving to a string containing the extracted page content
    *  with a descriptive header, or an error message if extraction fails.
    */
-  static async getPageContent({ url }, allowedUrls) {
+  static async getPageContent({ url_list }, allowedUrls = new Set()) {
+    // Ensure `url_list` is always an array
+    if (!Array.isArray(url_list)) {
+      throw new Error("getPageContent now requires { url_list: [...] }");
+    }
+
+    const promises = url_list.map(url =>
+      this.#processSingleURL(url, allowedUrls)
+    );
+
+    // Run all fetches in parallel
+    const ret_contents = await Promise.all(promises);
+    return ret_contents;
+  }
+
+  static async #processSingleURL(url, allowedUrls) {
     try {
       // Search through the allowed URLs and extract directly if exists
       if (!allowedUrls.has(url)) {
@@ -270,36 +304,47 @@ export class GetPageContent {
         );
       }
 
-      // TODO: figure out what windows we can access to give permission here, and update this API
-      let win = lazy.BrowserWindowTracker.getTopWindow();
-      let gBrowser = win.gBrowser;
-      let tabs = gBrowser.tabs;
-
-      // Find the tab with the matching URL in browser
+      // Search through all AI Windows to find the tab with the matching URL
       let targetTab = null;
-      for (let i = 0; i < tabs.length; i++) {
-        const tab = tabs[i];
-        const currentURI = tab?.linkedBrowser?.currentURI;
-        if (currentURI?.spec === url) {
-          targetTab = tab;
-          break;
+      for (const win of lazy.BrowserWindowTracker.orderedWindows) {
+        if (!lazy.AIWindow.isAIWindowActive(win)) {
+          continue;
         }
-      }
 
-      // If no match, try hostname matching for cases where protocols differ
-      if (!targetTab) {
-        try {
-          const inputHostPort = new URL(url).host;
-          targetTab = tabs.find(tab => {
-            try {
-              const tabHostPort = tab.linkedBrowser.currentURI.hostPort;
-              return tabHostPort === inputHostPort;
-            } catch {
-              return false;
+        if (!win.closed && win.gBrowser) {
+          const tabs = win.gBrowser.tabs;
+
+          // Find the tab with the matching URL in this window
+          for (let i = 0; i < tabs.length; i++) {
+            const tab = tabs[i];
+            const currentURI = tab?.linkedBrowser?.currentURI;
+            if (currentURI?.spec === url) {
+              targetTab = tab;
+              break;
             }
-          });
-        } catch {
-          // Invalid URL, continue with original logic
+          }
+
+          // If no match, try hostname matching for cases where protocols differ
+          if (!targetTab) {
+            try {
+              const inputHostPort = new URL(url).host;
+              targetTab = tabs.find(tab => {
+                try {
+                  const tabHostPort = tab.linkedBrowser.currentURI.hostPort;
+                  return tabHostPort === inputHostPort;
+                } catch {
+                  return false;
+                }
+              });
+            } catch {
+              // Invalid URL, continue with original logic
+            }
+          }
+
+          // If we found the tab, stop searching
+          if (targetTab) {
+            break;
+          }
         }
       }
 

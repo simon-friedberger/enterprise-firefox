@@ -486,18 +486,27 @@ def target_tasks_enterprise_firefox_with_tests(
     )
 
     def filter(task):
+        # Enabling tests suites triggers many jobs not required, limit execution
+        # to enterprise builds for now
+        if task.kind in ["test", "mochitest"] and "enterprise" not in task.label:
+            return False
+
         # Only keep builds that have been explicitely flagged
         if task.kind == "build" and not "enterprise-firefox" in task.attributes.get(
             "run_on_projects"
         ):
             return False
 
-        if task.kind == "enterprise-test":
-            return True
-
         build_platform = task.attributes.get("build_platform")
         build_type = task.attributes.get("build_type")
         shippable = task.attributes.get("shippable", False)
+
+        level = int(parameters["level"])
+        if ("shippable" in task.label or shippable) and level < 3:
+            return False
+
+        if task.kind == "enterprise-test":
+            return True
 
         if not build_platform or not build_type:
             return True
@@ -960,17 +969,14 @@ def make_desktop_nightly_filter(platforms):
     """Returns a filter that gets all nightly tasks on the given platform."""
 
     def filter(task, parameters):
-        return all(
-            [
-                filter_on_platforms(task, platforms),
-                filter_for_project(task, parameters),
-                task.attributes.get("shippable", False),
-                # Tests and nightly only builds don't have `shipping_product` set
-                task.attributes.get("shipping_product")
-                in {None, "firefox", "thunderbird"},
-                task.kind not in {"l10n"},  # no on-change l10n
-            ]
-        )
+        return all([
+            filter_on_platforms(task, platforms),
+            filter_for_project(task, parameters),
+            task.attributes.get("shippable", False),
+            # Tests and nightly only builds don't have `shipping_product` set
+            task.attributes.get("shipping_product") in {None, "firefox", "thunderbird"},
+            task.kind not in {"l10n"},  # no on-change l10n
+        ])
 
     return filter
 
@@ -1011,9 +1017,10 @@ def target_tasks_nightly_linux(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of linux. The
     nightly build process involves a pipeline of builds, signing,
     and, eventually, uploading the tasks to balrog."""
-    filter = make_desktop_nightly_filter(
-        {"linux64-shippable", "linux64-aarch64-shippable"}
-    )
+    filter = make_desktop_nightly_filter({
+        "linux64-shippable",
+        "linux64-aarch64-shippable",
+    })
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
 
@@ -1058,9 +1065,10 @@ def target_tasks_nightly_asan(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of asan. The
     nightly build process involves a pipeline of builds, signing,
     and, eventually, uploading the tasks to balrog."""
-    filter = make_desktop_nightly_filter(
-        {"linux64-asan-reporter-shippable", "win64-asan-reporter-shippable"}
-    )
+    filter = make_desktop_nightly_filter({
+        "linux64-asan-reporter-shippable",
+        "win64-asan-reporter-shippable",
+    })
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
 

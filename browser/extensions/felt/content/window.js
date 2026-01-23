@@ -84,6 +84,8 @@ async function listenFormEmailSubmission() {
     signInBtn.disabled = emailInput.value.trim() === "";
   });
 
+  emailInput.focus();
+
   // <moz-button> does not trigger the native "submit" event on <form>
   // so we manually handle submission on button click and when Enter is pressed
   signInBtn.addEventListener("click", () => {
@@ -95,6 +97,18 @@ async function listenFormEmailSubmission() {
       connectToConsole(emailInput.value);
     }
   });
+}
+
+function informAboutPotentialStartupFailure() {
+  if (window.location.search) {
+    const errorClass = new URLSearchParams(window.location.search).get("error");
+    if (errorClass) {
+      document
+        .querySelector(".felt-browser-error")
+        .classList.remove("is-hidden");
+      document.querySelector(`.${errorClass}`).classList.remove("is-hidden");
+    }
+  }
 }
 
 function setupMarionetteEnvironment() {
@@ -186,6 +200,7 @@ window.addEventListener(
     setupMarionetteEnvironment();
     setupPopupNotifications();
     listenFormEmailSubmission();
+    informAboutPotentialStartupFailure();
   },
   true
 );

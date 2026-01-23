@@ -326,9 +326,7 @@ export const ConsoleClient = {
     }
 
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `Fetch against ${method}${path} failed (${res.status}): ${text}`
-    );
+    throw new Error(`Fetch ${method} ${path} failed (${res.status}): ${text}`);
   },
 
   /**
@@ -484,6 +482,8 @@ export const ConsoleClient = {
         ipv4: null,
         ipv6: null,
       },
+      secureBootEnabled:
+        Services.sysinfo.getPropertyAsBool("secureBootEnabled"),
     };
     return devicePosturePayload;
   },

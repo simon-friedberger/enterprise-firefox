@@ -28,6 +28,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   ProxyPolicies: "resource:///modules/policies/ProxyPolicies.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
 #ifdef MOZ_ENTERPRISE
   SyncSettingsPolicy: "resource:///modules/policies/SyncSettingsPolicy.sys.mjs",
@@ -1227,6 +1228,14 @@ export var Policies = {
       if (param) {
         manager.disallowFeature("profileRefresh");
         setAndLockPref("browser.disableResetPrompt", true);
+      }
+    },
+  },
+
+  DisableRemoteImprovements: {
+    onBeforeAddons(manager, param) {
+      if (param) {
+        manager.disallowFeature("NimbusRollouts");
       }
     },
   },
@@ -2886,7 +2895,7 @@ export var Policies = {
       }
     },
     onAllWindowsRestored(manager, param) {
-      Services.search.init().then(async () => {
+      lazy.SearchService.init().then(async () => {
         // Adding of engines is handled by the SearchService in the init().
         // Remove can happen after those are added - no engines are allowed
         // to replace the application provided engines, even if they have been
@@ -2898,10 +2907,10 @@ export var Policies = {
             JSON.stringify(param.Remove),
             async function () {
               for (let engineName of param.Remove) {
-                let engine = Services.search.getEngineByName(engineName);
+                let engine = lazy.SearchService.getEngineByName(engineName);
                 if (engine) {
                   try {
-                    await Services.search.removeEngine(
+                    await lazy.SearchService.removeEngine(
                       engine,
                       Ci.nsISearchService.CHANGE_REASON_ENTERPRISE
                     );
@@ -2920,7 +2929,9 @@ export var Policies = {
             async () => {
               let defaultEngine;
               try {
-                defaultEngine = Services.search.getEngineByName(param.Default);
+                defaultEngine = lazy.SearchService.getEngineByName(
+                  param.Default
+                );
                 if (!defaultEngine) {
                   throw new Error("No engine by that name could be found");
                 }
@@ -2934,7 +2945,7 @@ export var Policies = {
               }
               if (defaultEngine) {
                 try {
-                  await Services.search.setDefault(
+                  await lazy.SearchService.setDefault(
                     defaultEngine,
                     Ci.nsISearchService.CHANGE_REASON_ENTERPRISE
                   );
@@ -2952,7 +2963,7 @@ export var Policies = {
             async () => {
               let defaultPrivateEngine;
               try {
-                defaultPrivateEngine = Services.search.getEngineByName(
+                defaultPrivateEngine = lazy.SearchService.getEngineByName(
                   param.DefaultPrivate
                 );
                 if (!defaultPrivateEngine) {
@@ -2968,7 +2979,7 @@ export var Policies = {
               }
               if (defaultPrivateEngine) {
                 try {
-                  await Services.search.setDefaultPrivate(
+                  await lazy.SearchService.setDefaultPrivate(
                     defaultPrivateEngine,
                     Ci.nsISearchService.CHANGE_REASON_ENTERPRISE
                   );
@@ -3196,6 +3207,10 @@ export var Policies = {
   TranslateEnabled: {
     onBeforeAddons(manager, param) {
       setAndLockPref("browser.translations.enable", param);
+      setAndLockPref(
+        "browser.ai.control.translations",
+        param ? "enabled" : "blocked"
+      );
     },
   },
 

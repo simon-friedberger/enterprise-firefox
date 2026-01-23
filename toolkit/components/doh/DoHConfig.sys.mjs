@@ -112,6 +112,9 @@ function makeBaseConfigObject() {
     get fallbackProviderURI() {
       return this.providerList[0]?.uri;
     },
+    get http3FirstEnabled() {
+      return this.providerList[0]?.http3First;
+    },
     trrSelection: {},
     providerSteering: {},
   };
@@ -246,17 +249,24 @@ export const DoHConfigController = {
     });
   },
 
+  updateRegionIfChanged(trigger) {
+    let oldRegion = lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`);
+    if (currentRegion() && currentRegion() != oldRegion) {
+      let newRegion = currentRegion();
+      lazy.Preferences.set(`${kGlobalPrefBranch}.home-region`, newRegion);
+      Glean.doh.regionChanged.record({
+        old_region: oldRegion || "unknown",
+        new_region: newRegion,
+        trigger,
+      });
+      this.notifyNewConfig();
+    }
+  },
+
   // Performs a region check when the timezone changes
   async getRegionAndNotify() {
     await lazy.Region._fetchRegion();
-    if (
-      currentRegion() &&
-      currentRegion() !=
-        lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`)
-    ) {
-      lazy.Preferences.set(`${kGlobalPrefBranch}.home-region`, currentRegion());
-      this.notifyNewConfig();
-    }
+    this.updateRegionIfChanged("timezone-changed");
   },
 
   observe(subject, topic, data) {
@@ -280,17 +290,7 @@ export const DoHConfigController = {
         }
         break;
       case "idle-daily":
-        if (
-          currentRegion() &&
-          currentRegion() !=
-            lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`)
-        ) {
-          lazy.Preferences.set(
-            `${kGlobalPrefBranch}.home-region`,
-            currentRegion()
-          );
-          this.notifyNewConfig();
-        }
+        this.updateRegionIfChanged("idle-daily");
         break;
       case "default-timezone-changed":
         this.getRegionAndNotify();

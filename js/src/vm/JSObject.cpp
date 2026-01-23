@@ -16,14 +16,13 @@
 #include <string.h>
 
 #include "jsapi.h"
-#include "jsdate.h"
-#include "jsexn.h"
 #include "jsfriendapi.h"
-#include "jsnum.h"
 #include "jstypes.h"
 
 #include "builtin/BigInt.h"
+#include "builtin/Date.h"
 #include "builtin/MapObject.h"
+#include "builtin/Number.h"
 #include "builtin/Object.h"
 #include "builtin/String.h"
 #include "builtin/Symbol.h"
@@ -53,6 +52,7 @@
 #include "vm/BytecodeUtil.h"
 #include "vm/Compartment.h"
 #include "vm/DateObject.h"
+#include "vm/ErrorObject.h"
 #include "vm/Interpreter.h"
 #include "vm/Iteration.h"
 #include "vm/JSAtomUtils.h"  // Atomize
@@ -2232,13 +2232,6 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
     if (!JS::Prefs::experimental_promise_allkeyed() &&
         (id == NameToId(cx->names().allKeyed) ||
          id == NameToId(cx->names().allSettledKeyed))) {
-      return true;
-    }
-  }
-  if (key == JSProto_Map || key == JSProto_WeakMap) {
-    if (!JS::Prefs::experimental_upsert() &&
-        (id == NameToId(cx->names().getOrInsert) ||
-         id == NameToId(cx->names().getOrInsertComputed))) {
       return true;
     }
   }

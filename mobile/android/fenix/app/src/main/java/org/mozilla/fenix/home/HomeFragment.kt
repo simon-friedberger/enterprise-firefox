@@ -5,7 +5,6 @@
 package org.mozilla.fenix.home
 
 import android.annotation.SuppressLint
-import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -151,7 +150,6 @@ import org.mozilla.fenix.microsurvey.ui.MicrosurveyRequestPrompt
 import org.mozilla.fenix.microsurvey.ui.ext.MicrosurveyUIData
 import org.mozilla.fenix.microsurvey.ui.ext.toMicrosurveyUIData
 import org.mozilla.fenix.nimbus.FxNimbus
-import org.mozilla.fenix.onboarding.WidgetPinnedReceiver
 import org.mozilla.fenix.pbmlock.NavigationOrigin
 import org.mozilla.fenix.pbmlock.observePrivateModeLock
 import org.mozilla.fenix.perf.MarkersFragmentLifecycleCallbacks
@@ -161,7 +159,6 @@ import org.mozilla.fenix.search.SearchDialogFragment
 import org.mozilla.fenix.search.awesomebar.AwesomeBarComposable
 import org.mozilla.fenix.search.toolbar.DefaultSearchSelectorController
 import org.mozilla.fenix.search.toolbar.SearchSelectorMenu
-import org.mozilla.fenix.settings.deletebrowsingdata.DefaultDeleteBrowsingDataController
 import org.mozilla.fenix.snackbar.FenixSnackbarDelegate
 import org.mozilla.fenix.snackbar.SnackbarBinding
 import org.mozilla.fenix.tabstray.Page
@@ -676,23 +673,6 @@ class HomeFragment : Fragment() {
                 interactor = sessionControlInteractor,
                 homeFragment = this,
                 homeActivity = activity,
-                deleteBrowsingDataController = DefaultDeleteBrowsingDataController(
-                    deleteDataUseCases = DefaultDeleteBrowsingDataController.DeleteDataUseCases(
-                        removeAllTabs = activity.components.useCases.tabsUseCases.removeAllTabs,
-                        removeAllDownloads = activity.components.useCases.downloadUseCases.removeAllDownloads,
-                    ),
-                    dataStorage = DefaultDeleteBrowsingDataController.DataStorage(
-                        history = activity.components.core.historyStorage,
-                        permissions = activity.components.core.permissionStorage,
-                    ),
-                    stores = DefaultDeleteBrowsingDataController.Stores(
-                        appStore = activity.components.appStore,
-                        browserStore = activity.components.core.store,
-                    ),
-                    engine = activity.components.core.engine,
-                    settings = activity.components.settings,
-                    coroutineContext = activity.lifecycleScope.coroutineContext,
-                ),
             )
         }
 
@@ -707,8 +687,6 @@ class HomeFragment : Fragment() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-
-        (toolbarView as? HomeToolbarView)?.dismissMenu()
 
         // If the microsurvey feature is visible, we should update it's state.
         if (shouldShowMicrosurveyPrompt(requireContext())) {
@@ -1380,15 +1358,7 @@ class HomeFragment : Fragment() {
      */
     private fun showAddSearchWidgetPrompt() {
         viewLifecycleOwner.lifecycleScope.launch {
-            val currentPackageName = requireActivity().packageName
-            val currentWidgetManager = AppWidgetManager.getInstance(requireContext())
-            val currentAddWidgetSuccessCallback = WidgetPinnedReceiver.getPendingIntent(requireContext())
-
-            showAddSearchWidgetPromptIfSupported(
-                packageName = currentPackageName,
-                appWidgetManager = currentWidgetManager,
-                successCallback = currentAddWidgetSuccessCallback,
-            )
+            showAddSearchWidgetPromptIfSupported(requireActivity())
         }
     }
 

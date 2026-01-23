@@ -24,15 +24,6 @@
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 
-#ifdef MOZ_WIDGET_ANDROID
-#  include "mozilla/layers/TextureHostOGL.h"
-#endif
-
-#ifdef XP_WIN
-#  include "mozilla/layers/FenceD3D11.h"
-#  include "mozilla/layers/TextureD3D11.h"
-#endif
-
 namespace mozilla {
 namespace layers {
 
@@ -68,6 +59,8 @@ AsyncImagePipelineManager::AsyncImagePipelineManager(
           gfx::gfxVars::UseWebRenderDCompVideoHwOverlayWin()),
       mUseWebRenderDCompVideoSwOverlayWin(
           gfx::gfxVars::UseWebRenderDCompVideoSwOverlayWin()),
+      mUseWebRenderDCompositionTextureOverlayWin(
+          gfx::gfxVars::UseWebRenderDCompositionTextureOverlayWin()),
 #endif
       mRenderSubmittedUpdatesLock("SubmittedUpdatesLock"),
       mLastCompletedFrameId(0) {
@@ -379,20 +372,24 @@ void AsyncImagePipelineManager::ApplyAsyncImagesOfImageBridge(
   }
 
 #ifdef XP_WIN
-  // UseWebRenderDCompVideoHwOverlayWin() and
-  // UseWebRenderDCompVideoSwOverlayWin() could be changed from true to false,
-  // when DCompVideoOverlay task is failed. In this case, DisplayItems need to
-  // be re-pushed to WebRender for disabling video overlay.
+  // UseWebRenderDCompVideoHwOverlayWin(), UseWebRenderDCompVideoSwOverlayWin()
+  // and gfxVars::UseWebRenderDCompositionTextureOverlayWin() could be changed
+  // from true to false, when overlay task is failed. In this case, DisplayItems
+  // need to be re-pushed to WebRender for disabling video overlay.
   bool isChanged = (mUseWebRenderDCompVideoHwOverlayWin !=
                     gfx::gfxVars::UseWebRenderDCompVideoHwOverlayWin()) ||
                    (mUseWebRenderDCompVideoSwOverlayWin !=
-                    gfx::gfxVars::UseWebRenderDCompVideoSwOverlayWin());
+                    gfx::gfxVars::UseWebRenderDCompVideoSwOverlayWin()) ||
+                   (mUseWebRenderDCompositionTextureOverlayWin !=
+                    gfx::gfxVars::UseWebRenderDCompositionTextureOverlayWin());
 
   if (isChanged) {
     mUseWebRenderDCompVideoHwOverlayWin =
         gfx::gfxVars::UseWebRenderDCompVideoHwOverlayWin();
     mUseWebRenderDCompVideoSwOverlayWin =
         gfx::gfxVars::UseWebRenderDCompVideoSwOverlayWin();
+    mUseWebRenderDCompositionTextureOverlayWin =
+        gfx::gfxVars::UseWebRenderDCompositionTextureOverlayWin();
   }
 #endif
 
@@ -734,21 +731,19 @@ void AsyncImagePipelineManager::ProcessPipelineRendered(
         holder->mTextureHostsUntilRenderSubmitted.begin(),
         holder->mTextureHostsUntilRenderSubmitted.end(),
         [&aEpoch](const auto& entry) { return aEpoch <= entry.mEpoch; });
-#ifdef MOZ_WIDGET_ANDROID
-    // Set release fence if TextureHost owns AndroidHardwareBuffer.
+
+    // Set read fence if TextureHost owns AndroidHardwareBuffer.
     // The TextureHost handled by mTextureHostsUntilRenderSubmitted instead of
     // mTextureHostsUntilRenderCompleted, since android fence could be used
     // to wait until its end of usage by GPU.
     for (auto it = holder->mTextureHostsUntilRenderSubmitted.begin();
          it != firstSubmittedHostToKeep; ++it) {
       const auto& entry = it;
-      if (entry->mTexture->GetAndroidHardwareBuffer() && mReadFence &&
-          mReadFence->AsFenceFileHandle()) {
-        entry->mTexture->SetReleaseFence(
-            mReadFence->AsFenceFileHandle()->DuplicateFileHandle());
+      if (entry->mTexture->GetAndroidHardwareBuffer() && mReadFence) {
+        entry->mTexture->SetReadFence(mReadFence);
       }
     }
-#endif
+
     holder->mTextureHostsUntilRenderSubmitted.erase(
         holder->mTextureHostsUntilRenderSubmitted.begin(),
         firstSubmittedHostToKeep);

@@ -10,34 +10,34 @@ const {
   constructRealTimeInfoInjectionMessage,
   getLocalIsoTime,
   getCurrentTabMetadata,
-  constructRelevantInsightsContextMessage,
+  constructRelevantMemoriesContextMessage,
   parseContentWithTokens,
   detectTokens,
 } = ChromeUtils.importESModule(
   "moz-src:///browser/components/aiwindow/models/ChatUtils.sys.mjs"
 );
-const { InsightsManager } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/aiwindow/models/InsightsManager.sys.mjs"
+const { MemoriesManager } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/models/memories/MemoriesManager.sys.mjs"
 );
-const { InsightStore } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/aiwindow/services/InsightStore.sys.mjs"
+const { MemoryStore } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/services/MemoryStore.sys.mjs"
 );
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
 
 /**
- * Constants for test insights
+ * Constants for test memories
  */
-const TEST_INSIGHTS = [
+const TEST_MEMORIES = [
   {
-    insight_summary: "Loves drinking coffee",
+    memory_summary: "Loves drinking coffee",
     category: "Food & Drink",
     intent: "Plan / Organize",
     score: 3,
   },
   {
-    insight_summary: "Buys dog food online",
+    memory_summary: "Buys dog food online",
     category: "Pets & Animals",
     intent: "Buy / Acquire",
     score: 4,
@@ -45,15 +45,15 @@ const TEST_INSIGHTS = [
 ];
 
 /**
- * Helper function bulk-add insights
+ * Helper function bulk-add memories
  */
-async function clearAndAddInsights() {
-  const insights = await InsightStore.getInsights();
-  for (const insight of insights) {
-    await InsightStore.hardDeleteInsight(insight.id);
+async function clearAndAddMemories() {
+  const memories = await MemoryStore.getMemories();
+  for (const memory of memories) {
+    await MemoryStore.hardDeleteMemory(memory.id);
   }
-  for (const insight of TEST_INSIGHTS) {
-    await InsightStore.addInsight(insight);
+  for (const memory of TEST_MEMORIES) {
+    await MemoryStore.addMemory(memory);
   }
 }
 
@@ -108,21 +108,27 @@ add_task(async function test_getCurrentTabMetadata_fetch_fallback() {
   const tracker = { getTopWindow: sb.stub() };
   const pageData = {
     getCached: sb.stub(),
-    fetchPageData: sb.stub(),
+  };
+  const fakeActor = {
+    collectPageData: sb.stub().resolves({
+      description: "Collected description",
+    }),
   };
   const fakeBrowser = {
     currentURI: { spec: "https://example.com/article" },
     contentTitle: "",
     documentTitle: "Example Article",
+    browsingContext: {
+      currentWindowGlobal: {
+        getActor: sb.stub().returns(fakeActor),
+      },
+    },
   };
 
   tracker.getTopWindow.returns({
     gBrowser: { selectedBrowser: fakeBrowser },
   });
   pageData.getCached.returns(null);
-  const fetchStub = pageData.fetchPageData.resolves({
-    description: "Fetched description",
-  });
 
   try {
     const result = await getCurrentTabMetadata({
@@ -132,9 +138,18 @@ add_task(async function test_getCurrentTabMetadata_fetch_fallback() {
     Assert.deepEqual(result, {
       url: "https://example.com/article",
       title: "Example Article",
-      description: "Fetched description",
+      description: "Collected description",
     });
-    Assert.ok(fetchStub.calledOnce, "Should fetch description when not cached");
+    Assert.ok(
+      fakeActor.collectPageData.calledOnce,
+      "Should collect page data from actor when not cached"
+    );
+    Assert.ok(
+      fakeBrowser.browsingContext.currentWindowGlobal.getActor.calledWith(
+        "PageData"
+      ),
+      "Should get PageData actor"
+    );
   } finally {
     sb.restore();
   }
@@ -146,13 +161,20 @@ add_task(
     const tracker = { getTopWindow: sb.stub() };
     const pageData = {
       getCached: sb.stub(),
-      fetchPageData: sb.stub(),
     };
     const locale = Services.locale.appLocaleAsBCP47;
+    const fakeActor = {
+      collectPageData: sb.stub(),
+    };
     const fakeBrowser = {
       currentURI: { spec: "https://mozilla.org" },
       contentTitle: "Mozilla",
       documentTitle: "Mozilla",
+      browsingContext: {
+        currentWindowGlobal: {
+          getActor: sb.stub().returns(fakeActor),
+        },
+      },
     };
 
     tracker.getTopWindow.returns({
@@ -161,7 +183,6 @@ add_task(
     pageData.getCached.returns({
       description: "Internet for people",
     });
-    const fetchStub = pageData.fetchPageData;
     const clock = sb.useFakeTimers({ now: Date.UTC(2025, 11, 27, 14, 0, 0) });
 
     try {
@@ -191,8 +212,8 @@ add_task(
         "Should include tab description"
       );
       Assert.ok(
-        fetchStub.notCalled,
-        "Should not fetch when cached data exists"
+        fakeActor.collectPageData.notCalled,
+        "Should not collect page data when cached data exists"
       );
     } finally {
       clock.restore();
@@ -238,8 +259,8 @@ add_task(
   }
 );
 
-add_task(async function test_constructRelevantInsightsContextMessage() {
-  await clearAndAddInsights();
+add_task(async function test_constructRelevantMemoriesContextMessage() {
+  await clearAndAddMemories();
 
   const sb = sinon.createSandbox();
   try {
@@ -254,53 +275,53 @@ add_task(async function test_constructRelevantInsightsContextMessage() {
       },
     };
 
-    // Stub the `ensureOpenAIEngine` method in InsightsManager
+    // Stub the `ensureOpenAIEngine` method in MemoriesManager
     const stub = sb
-      .stub(InsightsManager, "ensureOpenAIEngine")
+      .stub(MemoriesManager, "ensureOpenAIEngine")
       .returns(fakeEngine);
 
-    const relevantInsightsContextMessage =
-      await constructRelevantInsightsContextMessage("I love drinking coffee");
+    const relevantMemoriesContextMessage =
+      await constructRelevantMemoriesContextMessage("I love drinking coffee");
     Assert.ok(stub.calledOnce, "ensureOpenAIEngine should be called once");
 
-    // Check relevantInsightsContextMessage's top level structure
+    // Check relevantMemoriesContextMessage's top level structure
     Assert.strictEqual(
-      typeof relevantInsightsContextMessage,
+      typeof relevantMemoriesContextMessage,
       "object",
       "Should return an object"
     );
     Assert.equal(
-      Object.keys(relevantInsightsContextMessage).length,
+      Object.keys(relevantMemoriesContextMessage).length,
       2,
       "Should have 2 keys"
     );
 
     // Check specific fields
     Assert.equal(
-      relevantInsightsContextMessage.role,
+      relevantMemoriesContextMessage.role,
       "system",
       "Should have role 'system'"
     );
     Assert.ok(
-      typeof relevantInsightsContextMessage.content === "string" &&
-        relevantInsightsContextMessage.content.length,
+      typeof relevantMemoriesContextMessage.content === "string" &&
+        relevantMemoriesContextMessage.content.length,
       "Content should be a non-empty string"
     );
 
-    const content = relevantInsightsContextMessage.content;
+    const content = relevantMemoriesContextMessage.content;
     Assert.ok(
       content.includes(
         "Use them to personalized your response using the following guidelines:"
       ),
-      "Relevant insights context prompt should pull from the correct base"
+      "Relevant memories context prompt should pull from the correct base"
     );
     Assert.ok(
       content.includes("- Loves drinking coffee"),
-      "Content should include relevant insight"
+      "Content should include relevant memory"
     );
     Assert.ok(
       !content.includes("- Buys dog food online"),
-      "Content should not include non-relevant insight"
+      "Content should not include non-relevant memory"
     );
   } finally {
     sb.restore();
@@ -308,8 +329,8 @@ add_task(async function test_constructRelevantInsightsContextMessage() {
 });
 
 add_task(
-  async function test_constructRelevantInsightsContextMessage_no_relevant_insights() {
-    await clearAndAddInsights();
+  async function test_constructRelevantMemoriesContextMessage_no_relevant_memories() {
+    await clearAndAddMemories();
 
     const sb = sinon.createSandbox();
     try {
@@ -324,20 +345,20 @@ add_task(
         },
       };
 
-      // Stub the `ensureOpenAIEngine` method in InsightsManager
+      // Stub the `ensureOpenAIEngine` method in MemoriesManager
       const stub = sb
-        .stub(InsightsManager, "ensureOpenAIEngine")
+        .stub(MemoriesManager, "ensureOpenAIEngine")
         .returns(fakeEngine);
 
-      const relevantInsightsContextMessage =
-        await constructRelevantInsightsContextMessage("I love drinking coffee");
+      const relevantMemoriesContextMessage =
+        await constructRelevantMemoriesContextMessage("I love drinking coffee");
       Assert.ok(stub.calledOnce, "ensureOpenAIEngine should be called once");
 
-      // No relevant insights, so returned value should be null
+      // No relevant memories, so returned value should be null
       Assert.equal(
-        relevantInsightsContextMessage,
+        relevantMemoriesContextMessage,
         null,
-        "Should return null when there are no relevant insights"
+        "Should return null when there are no relevant memories"
       );
     } finally {
       sb.restore();
@@ -355,7 +376,7 @@ add_task(async function test_parseContentWithTokens_no_tokens() {
     "Clean content should match original when no tokens present"
   );
   Assert.equal(result.searchQueries.length, 0, "Should have no search queries");
-  Assert.equal(result.usedInsights.length, 0, "Should have no used insights");
+  Assert.equal(result.usedMemories.length, 0, "Should have no used memories");
 });
 
 add_task(async function test_parseContentWithTokens_single_search_token() {
@@ -374,31 +395,31 @@ add_task(async function test_parseContentWithTokens_single_search_token() {
     "best coffee shops near me",
     "Should extract correct search query"
   );
-  Assert.equal(result.usedInsights.length, 0, "Should have no used insights");
+  Assert.equal(result.usedMemories.length, 0, "Should have no used memories");
 });
 
-add_task(async function test_parseContentWithTokens_single_insight_token() {
+add_task(async function test_parseContentWithTokens_single_memory_token() {
   const content =
-    "I recommend trying herbal tea blends.§existing_insight: likes tea§";
+    "I recommend trying herbal tea blends.§existing_memory: likes tea§";
   const result = await parseContentWithTokens(content);
 
   Assert.equal(
     result.cleanContent,
     "I recommend trying herbal tea blends.",
-    "Should remove insight token from content"
+    "Should remove memory token from content"
   );
   Assert.equal(result.searchQueries.length, 0, "Should have no search queries");
-  Assert.equal(result.usedInsights.length, 1, "Should have one used insight");
+  Assert.equal(result.usedMemories.length, 1, "Should have one used memory");
   Assert.equal(
-    result.usedInsights[0],
+    result.usedMemories[0],
     "likes tea",
-    "Should extract correct insight"
+    "Should extract correct memory"
   );
 });
 
 add_task(async function test_parseContentWithTokens_multiple_mixed_tokens() {
   const content =
-    "I recommend checking out organic coffee options.§existing_insight: prefers organic§ They have great flavor profiles.§search: organic coffee beans reviews§§search: best organic cafes nearby§";
+    "I recommend checking out organic coffee options.§existing_memory: prefers organic§ They have great flavor profiles.§search: organic coffee beans reviews§§search: best organic cafes nearby§";
   const result = await parseContentWithTokens(content);
 
   Assert.equal(
@@ -416,11 +437,11 @@ add_task(async function test_parseContentWithTokens_multiple_mixed_tokens() {
     ["organic coffee beans reviews", "best organic cafes nearby"],
     "Should extract search queries in correct order"
   );
-  Assert.equal(result.usedInsights.length, 1, "Should have one used insight");
+  Assert.equal(result.usedMemories.length, 1, "Should have one used memory");
   Assert.equal(
-    result.usedInsights[0],
+    result.usedMemories[0],
     "prefers organic",
-    "Should extract correct insight"
+    "Should extract correct memory"
   );
 });
 
@@ -444,7 +465,7 @@ add_task(async function test_parseContentWithTokens_tokens_with_whitespace() {
 
 add_task(async function test_parseContentWithTokens_adjacent_tokens() {
   const content =
-    "Here are some great Italian dining options.§existing_insight: prefers italian food§§search: local italian restaurants§";
+    "Here are some great Italian dining options.§existing_memory: prefers italian food§§search: local italian restaurants§";
   const result = await parseContentWithTokens(content);
 
   Assert.equal(
@@ -458,11 +479,11 @@ add_task(async function test_parseContentWithTokens_adjacent_tokens() {
     "local italian restaurants",
     "Should extract search query"
   );
-  Assert.equal(result.usedInsights.length, 1, "Should have one insight");
+  Assert.equal(result.usedMemories.length, 1, "Should have one memory");
   Assert.equal(
-    result.usedInsights[0],
+    result.usedMemories[0],
     "prefers italian food",
-    "Should extract insight"
+    "Should extract memory"
   );
 });
 
@@ -497,9 +518,9 @@ add_task(function test_detectTokens_basic_pattern() {
 
 add_task(function test_detectTokens_custom_key() {
   const content =
-    "I recommend trying the Thai curry.§insight: prefers spicy food§";
-  const insightRegex = /§insight:\s*([^§]+)§/gi;
-  const result = detectTokens(content, insightRegex, "customKey");
+    "I recommend trying the Thai curry.§memory: prefers spicy food§";
+  const memoryRegex = /§memory:\s*([^§]+)§/gi;
+  const result = detectTokens(content, memoryRegex, "customKey");
 
   Assert.equal(result.length, 1, "Should find one match");
   Assert.equal(

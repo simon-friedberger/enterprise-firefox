@@ -341,6 +341,7 @@ void Gecko_CopyListStyleImageFrom(nsStyleList* dest, const nsStyleList* src);
 void Gecko_NoteDirtyElement(const mozilla::dom::Element*);
 void Gecko_NoteDirtySubtreeForInvalidation(const mozilla::dom::Element*);
 void Gecko_NoteAnimationOnlyDirtyElement(const mozilla::dom::Element*);
+void Gecko_InvalidatePositionTry(const mozilla::dom::Element*);
 
 bool Gecko_AnimationNameMayBeReferencedFromStyle(const nsPresContext*,
                                                  nsAtom* name);
@@ -535,7 +536,7 @@ void Gecko_SetJemallocThreadLocalArena(bool enabled);
 // Pseudo-element flags.
 #define CSS_PSEUDO_ELEMENT(name_, value_, flags_) \
   const uint32_t SERVO_CSS_PSEUDO_ELEMENT_FLAGS_##name_ = flags_;
-#include "nsCSSPseudoElementList.h"
+#include "nsCSSPseudoElementList.inc"
 #undef CSS_PSEUDO_ELEMENT
 
 bool Gecko_ErrorReportingEnabled(const mozilla::StyleSheet* sheet,
@@ -639,6 +640,7 @@ void Gecko_PrintfStderr(const nsCString*);
 
 bool Gecko_GetAnchorPosOffset(
     const AnchorPosOffsetResolutionParams* aParams, const nsAtom* aAnchorName,
+    const mozilla::StyleCascadeLevel* aTreeScope,
     mozilla::StylePhysicalSide aPropSide,
     mozilla::StyleAnchorSideKeyword aAnchorSideKeyword, float aPercentage,
     mozilla::Length* aOut);
@@ -660,6 +662,7 @@ bool Gecko_GetAnchorPosOffset(
  */
 bool Gecko_GetAnchorPosSize(const AnchorPosResolutionParams* aParams,
                             const nsAtom* aAnchorName,
+                            const mozilla::StyleCascadeLevel* aTreeScope,
                             mozilla::StylePhysicalAxis aPropAxis,
                             mozilla::StyleAnchorSizeKeyword aAnchorSizeKeyword,
                             mozilla::Length* aOut);

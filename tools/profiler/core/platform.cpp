@@ -59,7 +59,6 @@
 #include "nsDebug.h"
 #include "nsISupports.h"
 #include "nsXPCOM.h"
-#include "SharedLibraries.h"
 #include "VTuneProfiler.h"
 #include "ETWTools.h"
 
@@ -70,6 +69,7 @@
 #include "mozilla/ArrayAlgorithm.h"
 #include "mozilla/AutoProfilerLabel.h"
 #include "mozilla/BaseAndGeckoProfilerDetail.h"
+#include "mozilla/BaseProfiler.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
@@ -84,6 +84,7 @@
 #include "mozilla/ProfileChunkedBuffer.h"
 #include "mozilla/ProfilerBandwidthCounter.h"
 #include "mozilla/SchedulerGroup.h"
+#include "mozilla/SharedLibraries.h"
 #include "mozilla/Services.h"
 #include "mozilla/StackWalk.h"
 #include "mozilla/Try.h"
@@ -96,7 +97,6 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
-#include "BaseProfiler.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsIDocShell.h"
@@ -3195,6 +3195,35 @@ static void StreamCategories(SpliceableJSONWriter& aWriter) {
   }
 }
 
+static mozilla::StaticMutex sCustomMarkerSchemasMutex;
+static mozilla::StaticAutoPtr<nsTHashMap<nsCStringHashKey, nsString>>
+    sCustomMarkerSchemas;
+
+void profiler_register_marker_schema(const nsCString& aSchemaName,
+                                     const nsString& aSchemaJSON) {
+  mozilla::StaticMutexAutoLock lock(sCustomMarkerSchemasMutex);
+  if (!sCustomMarkerSchemas) {
+    sCustomMarkerSchemas = new nsTHashMap<nsCStringHashKey, nsString>();
+  }
+
+  sCustomMarkerSchemas->InsertOrUpdate(aSchemaName, aSchemaJSON);
+}
+
+static void StreamCustomMarkerSchemas(
+    baseprofiler::SpliceableJSONWriter& aWriter) {
+  mozilla::StaticMutexAutoLock lock(sCustomMarkerSchemasMutex);
+  if (!sCustomMarkerSchemas) {
+    return;
+  }
+
+  for (auto iter = sCustomMarkerSchemas->Iter(); !iter.Done(); iter.Next()) {
+    const nsString& jsonSchema = iter.Data();
+    NS_ConvertUTF16toUTF8 utf8Schema(jsonSchema);
+
+    aWriter.Splice(utf8Schema.get(), utf8Schema.Length());
+  }
+}
+
 static void StreamMarkerSchema(SpliceableJSONWriter& aWriter) {
   // Get an array view with all registered marker-type-specific functions.
   base_profiler_markers_detail::Streaming::LockedMarkerTypeFunctionsList
@@ -3205,6 +3234,11 @@ static void StreamMarkerSchema(SpliceableJSONWriter& aWriter) {
   // from the same code potentially living in different libraries.)
   for (const auto& markerTypeFunctions : markerTypeFunctionsArray) {
     auto name = markerTypeFunctions.mMarkerTypeNameFunction();
+    // Skip markers with empty names (used for wrapper types like
+    // JSCustomMarker)
+    if (name.empty()) {
+      continue;
+    }
     // std::set.insert(T&&) returns a pair, its `second` is true if the element
     // was actually inserted (i.e., it was not there yet.)
     const bool didInsert =
@@ -3424,6 +3458,7 @@ static void StreamMetaJSCustomObject(
 
   aWriter.StartArrayProperty("markerSchema");
   StreamMarkerSchema(aWriter);
+  StreamCustomMarkerSchemas(aWriter);
   aWriter.EndArray();
 
   ActivePS::WriteActiveConfiguration(aLock, aWriter,
@@ -7325,8 +7360,6 @@ RefPtr<GenericPromise> profiler_resume_sampling() {
 
 bool profiler_feature_active(uint32_t aFeature) {
   // This function runs both on and off the main thread.
-
-  MOZ_RELEASE_ASSERT(CorePS::Exists());
 
   // This function is hot enough that we use RacyFeatures, not ActivePS.
   return RacyFeatures::IsActiveWithFeature(aFeature);
