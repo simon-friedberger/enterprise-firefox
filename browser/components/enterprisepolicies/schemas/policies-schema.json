@@ -1696,8 +1696,9 @@
     "SyncSettings": {
       "type": "object",
       "properties": {
-        "SyncEnabled": {
-          "type": "boolean"
+        "State": {
+          "type": "string",
+          "enum": ["enabled", "disabled", "default"]
         },
         "TypesEnabled": {
           "type": "array",
