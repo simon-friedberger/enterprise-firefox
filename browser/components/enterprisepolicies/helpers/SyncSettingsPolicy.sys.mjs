@@ -35,7 +35,7 @@ const STATE = {
   SYNC_ENABLED: "enabled",
   SYNC_DISABLED: "disabled",
   POLICY_NOT_APPLIED: "policy-not-applied",
-}
+};
 
 /**
  * Policy to control the Sync state (force-enable or force-disable Sync)
@@ -44,6 +44,7 @@ const STATE = {
  */
 export const SyncSettingsPolicy = {
   _isSyncEnabledDefaultValue: null,
+  _currentPolicyState: null,
 
   /**
    * Get current sync state.
@@ -67,7 +68,7 @@ export const SyncSettingsPolicy = {
    *
    * @param {EnterprisePoliciesManager} manager
    * @param {SyncSettings} param
-   * 
+   *
    * @returns {Promise<void>} Resolves once all Sync settings have been applied.
    */
   async applySettings(manager, param) {
@@ -88,7 +89,7 @@ export const SyncSettingsPolicy = {
     }
 
     lazy.log.debug("Force-enable Sync");
-    
+
     for (const [type, pref] of Object.entries(ENGINE_PREFS)) {
       if (param.TypesEnabled.includes(type)) {
         lazy.log.debug(`Enabling type: ${type}`);
@@ -98,9 +99,9 @@ export const SyncSettingsPolicy = {
         lazy.setAndLockPref(pref, false);
       }
     }
-    
+
     await this.connectSync(manager);
-    
+
     this._currentPolicyState = STATE.SYNC_ENABLED;
   },
 
@@ -113,6 +114,21 @@ export const SyncSettingsPolicy = {
   async restoreSettings(manager) {
     lazy.log.debug("Restore Sync Settings");
 
+    if (this._currentPolicyState !== STATE.DEFAULT) {
+      // Only restore the default state if the current state
+      // isn't already the default state.
+      this.restoreDefault(manager);
+    }
+
+    this._currentPolicyState = STATE.POLICY_NOT_APPLIED;
+  },
+
+  /**
+   * Restore default state
+   *
+   * @param {EnterprisePoliciesManager} manager
+   */
+  async restoreDefault(manager) {
     for (const pref of Object.values(ENGINE_PREFS)) {
       lazy.unsetAndUnlockPref(pref);
     }

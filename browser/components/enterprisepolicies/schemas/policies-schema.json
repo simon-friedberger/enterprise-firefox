@@ -1704,7 +1704,16 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["addresses", "bookmarks", "history", "openTabs", "passwords", "paymentMethods", "addons", "settings"]
+            "enum": [
+              "addresses",
+              "bookmarks",
+              "history",
+              "openTabs",
+              "passwords",
+              "paymentMethods",
+              "addons",
+              "settings"
+            ]
           }
         },
         "required": ["State"]
