@@ -2026,6 +2026,7 @@ dependencies = [
  "nserror",
  "nsstring",
  "serde",
+ "serde_json",
  "thin-vec",
  "time",
  "xpcom",
